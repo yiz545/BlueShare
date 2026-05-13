@@ -6,10 +6,14 @@
 
 把同一份聲音同時送到兩支不同品牌的藍牙耳機，並讓兩人透過內建麥克風即時對話、全程錄音。
 
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-yiz545.github.io%2FBlueShare-7c9eff?style=for-the-badge)](https://yiz545.github.io/BlueShare/)
+
 ![macOS](https://img.shields.io/badge/macOS-12%2B-blue?logo=apple&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-yellow?logo=python&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-5-orange?logo=swift&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
+
+**👉 想直接試 Web 版？打開 [yiz545.github.io/BlueShare](https://yiz545.github.io/BlueShare/) 即可，不用 clone、不用安裝。**
 
 </div>
 
@@ -102,14 +106,19 @@ python3 blueshare.py
 
 ### 方式二：Web 版
 
+**🌐 最簡單：直接使用線上版**
+
+打開 → **<https://yiz545.github.io/BlueShare/>**
+
+GitHub Pages 已部署，無需下載、無需安裝，任何 Chrome / Edge / Opera 都能用。
+
+**🛠 進階：本機執行**
+
 ```bash
-# 直接以瀏覽器開啟（建議 Chrome / Edge / Opera）
+# 方式 A：直接以瀏覽器開啟
 open index.html
-```
 
-或啟動本地伺服器（部分瀏覽器需 HTTPS / localhost 才允許麥克風授權）：
-
-```bash
+# 方式 B：本地伺服器（部分瀏覽器需 HTTPS / localhost 才能存取麥克風）
 python3 -m http.server 8000
 # 瀏覽器開啟 http://localhost:8000
 ```
