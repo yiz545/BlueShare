@@ -169,18 +169,17 @@ BlueShare/
 ├── Start_BlueShare.command         # macOS 一鍵啟動腳本
 ├── index.html                      # Web 版單檔應用（含所有 CSS/JS）
 │
-├── dev/                            # 開發歷程探路腳本（不參與運行）
-│   ├── README.md
-│   ├── get_list.swift              # 探索：列出音訊裝置
-│   ├── test_vol.swift              # 探索：音量讀寫測試
-│   ├── test_mute.swift             # 探索：麥克風靜音屬性
-│   └── temp_pro.swift              # 早期 Pro 版草稿
-│
-├── Sharing Audio Across Bluetooth Devices.md   # 完整開發脈絡記錄
-└── Managing Multi-Headphone Audio Settings.md  # 音量／麥克風功能討論記錄
+└── dev/                            # 開發歷程資料（不參與運行）
+    ├── README.md
+    ├── get_list.swift              # 探索：列出音訊裝置
+    ├── test_vol.swift              # 探索：音量讀寫測試
+    ├── test_mute.swift             # 探索：麥克風靜音屬性
+    ├── temp_pro.swift              # 早期 Pro 版草稿
+    ├── Sharing Audio Across Bluetooth Devices.md   # 完整開發脈絡記錄
+    └── Managing Multi-Headphone Audio Settings.md  # 音量／麥克風功能討論記錄
 ```
 
-> 💡 **執行檔只有兩個**：`blueshare.py`（macOS 原生版）與 `index.html`（Web 版）。所有 Swift 程式碼皆以字串內嵌於 `blueshare.py`，執行時動態產生 `temp_ultimate.swift` 並於結束時刪除。`dev/` 內的獨立 `.swift` 檔僅供學習與獨立測試。
+> 💡 **執行檔只有兩個**：`blueshare.py`（macOS 原生版）與 `index.html`（Web 版）。所有 Swift 程式碼皆以字串內嵌於 `blueshare.py`，執行時動態產生 `temp_ultimate.swift` 並於結束時刪除。`dev/` 內的獨立 `.swift` 檔僅供學習與獨立測試；兩份 `.md` 對話記錄保留了完整開發脈絡。
 
 ---
 
