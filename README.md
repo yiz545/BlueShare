@@ -144,10 +144,9 @@ python3 -m http.server 8000
 **Web 版完整訊號路由**：
 
 ```
-mic1 ─→ micGain1 ┐
-mic2 ─→ micGain2 ┼─→ masterGain ┬─→ outGainA → destA → <audio sinkId=A>
-file ─→ fileGain ┘              ├─→ outGainB → destB → <audio sinkId=B>
-                                └─→ recDest  → MediaRecorder
+mic1 ─→ micGain1 ─┐                ┌─→ outGainA → destA → <audio sinkId=A>
+mic2 ─→ micGain2 ─┼─→ masterGain ──┼─→ outGainB → destB → <audio sinkId=B>
+file ─→ fileGain ─┘                └─→ recDest  → MediaRecorder
 ```
 
 ---
