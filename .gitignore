@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+Icon?
+._*
+
+# 執行時產生的暫存檔
+temp_ultimate.swift
+test_compile.swift
+test_compile_bin
+*.dSYM/
+
+# 錄音輸出（個人隱私）
+BlueShare_錄音檔/
+BlueShare_Records/
+
+# 系統 / 編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 0-byte placeholder
+blue tooth sfwr

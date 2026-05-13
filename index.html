@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BlueShare · 多耳機音訊共享</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --bg-start: #e8eeff;
+    --bg-end: #ffeef4;
+    --card-bg: rgba(255, 255, 255, 0.78);
+    --card-border: rgba(255, 255, 255, 0.9);
+    --shadow-sm: 0 4px 16px rgba(127, 145, 200, 0.08);
+    --shadow-md: 0 8px 32px rgba(127, 145, 200, 0.12);
+    --shadow-lg: 0 16px 48px rgba(127, 145, 200, 0.18);
+    --primary: #7c9eff;
+    --primary-dark: #5b7ee8;
+    --primary-light: #e4ecff;
+    --accent: #f9b5d0;
+    --accent-dark: #ec8db8;
+    --success: #6ec78b;
+    --warning: #f5b873;
+    --danger: #ef7777;
+    --text: #1f2937;
+    --text-light: #6b7280;
+    --text-muted: #9ca3af;
+    --border: rgba(124, 158, 255, 0.16);
+    --radius-sm: 8px;
+    --radius: 14px;
+    --radius-lg: 20px;
+  }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+    background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+    background-attachment: fixed;
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px 60px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 32px;
+    padding: 8px 0;
+  }
+  header h1 {
+    font-size: 38px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    background: linear-gradient(135deg, var(--primary-dark), var(--accent-dark));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: -0.5px;
+  }
+  header .subtitle {
+    font-size: 15px;
+    color: var(--text-light);
+    margin: 0;
+  }
+  header .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    color: var(--text-light);
+    box-shadow: var(--shadow-sm);
+  }
+  .status-pill .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s;
+  }
+  .status-pill.active .dot { background: var(--success); animation: pulse 2s infinite; }
+  .status-pill.recording .dot { background: var(--danger); animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+  }
+
+  /* Cards */
+  .card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+  }
+  .card h2 .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .card .hint {
+    font-size: 13px;
+    color: var(--text-light);
+    margin: -8px 0 14px;
+  }
+
+  /* Banner */
+  .banner {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    margin-bottom: 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    border-left: 3px solid var(--primary);
+    background: rgba(124, 158, 255, 0.08);
+    color: var(--text);
+  }
+  .banner.warning {
+    background: rgba(245, 184, 115, 0.12);
+    border-left-color: var(--warning);
+  }
+  .banner strong { color: var(--primary-dark); }
+  .banner.warning strong { color: #b97c2c; }
+
+  /* Grid */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* Inner card */
+  .inner-card {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .inner-card:hover { border-color: rgba(124, 158, 255, 0.3); }
+  .inner-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text);
+  }
+  .inner-card h3 .badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+  }
+  .inner-card h3 .badge.b { background: #fde8f1; color: var(--accent-dark); }
+
+  /* Form Elements */
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-light);
+    margin-bottom: 6px;
+  }
+  select, input[type="file"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: white;
+    font-size: 14px;
+    color: var(--text);
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+  }
+  select:hover, input[type="file"]:hover { border-color: var(--primary); }
+  select:focus, input[type="file"]:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(124, 158, 255, 0.15);
+  }
+
+  /* Buttons */
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 18px;
+    border-radius: var(--radius-sm);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:not(:disabled):active { transform: translateY(1px); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    box-shadow: 0 4px 12px rgba(124, 158, 255, 0.3);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 6px 16px rgba(124, 158, 255, 0.4);
+    transform: translateY(-1px);
+  }
+  .btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary-dark);
+  }
+  .btn-danger {
+    background: linear-gradient(135deg, #f9a0a0, var(--danger));
+    color: white;
+    box-shadow: 0 4px 12px rgba(239, 119, 119, 0.25);
+  }
+  .btn-danger:hover:not(:disabled) {
+    box-shadow: 0 6px 16px rgba(239, 119, 119, 0.35);
+    transform: translateY(-1px);
+  }
+  .btn-record {
+    background: linear-gradient(135deg, #fec5c5, #f88080);
+    color: white;
+    box-shadow: 0 4px 12px rgba(248, 128, 128, 0.25);
+  }
+  .btn-record.active {
+    background: linear-gradient(135deg, var(--danger), #c44);
+    animation: rec-pulse 1.5s infinite;
+  }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 4px 12px rgba(239, 119, 119, 0.3); }
+    50% { box-shadow: 0 4px 24px rgba(239, 119, 119, 0.55); }
+  }
+  .btn-toggle {
+    background: var(--success);
+    color: white;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  .btn-toggle.muted {
+    background: var(--text-muted);
+  }
+  .btn-large {
+    padding: 13px 22px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .btn-small {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Volume slider */
+  .vol-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .vol-row .icon { font-size: 16px; }
+  .vol-row .vol-label {
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--text-light);
+  }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: var(--primary-light);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--primary);
+    box-shadow: 0 2px 6px rgba(124, 158, 255, 0.3);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--primary);
+    box-shadow: 0 2px 6px rgba(124, 158, 255, 0.3);
+    cursor: pointer;
+  }
+
+  /* Level meter */
+  .meter {
+    height: 6px;
+    background: rgba(124, 158, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 10px 0;
+  }
+  .meter-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--success) 0%, var(--warning) 70%, var(--danger) 100%);
+    border-radius: 3px;
+    transition: width 0.08s ease-out;
+  }
+
+  /* Master controls */
+  .master-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  /* Audio player wrapper */
+  audio {
+    width: 100%;
+    margin-top: 8px;
+    height: 36px;
+  }
+  audio::-webkit-media-controls-panel {
+    background: var(--primary-light);
+  }
+
+  /* Recording list */
+  .rec-list {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+  }
+  .rec-list li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+  }
+  .rec-list .rec-info {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: var(--text-light);
+    margin-bottom: 4px;
+  }
+  .rec-list .rec-name { font-weight: 500; color: var(--text); font-size: 14px; }
+  .rec-list audio {
+    grid-column: 1 / -1;
+    margin: 6px 0 0;
+  }
+  .empty-list {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 13px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: rgba(31, 41, 55, 0.92);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 999px;
+    font-size: 14px;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+    box-shadow: var(--shadow-lg);
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 32px;
+  }
+  footer a { color: var(--primary); text-decoration: none; }
+
+  /* Tag chips */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(124, 158, 255, 0.12);
+    color: var(--primary-dark);
+  }
+  .chip.warning { background: rgba(245, 184, 115, 0.15); color: #a96821; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>🎧 BlueShare</h1>
+    <p class="subtitle">多耳機音訊共享 · 雙人對講 · 即時錄音</p>
+    <div class="status-pill" id="statusPill">
+      <span class="dot"></span>
+      <span id="statusText">未啟動</span>
+    </div>
+  </header>
+
+  <div class="banner" id="compatBanner">
+    <strong>使用前提示：</strong>請使用 Chrome / Edge / Opera（支援 setSinkId API）；首次需授權麥克風才能讀取裝置名稱。
+  </div>
+
+  <!-- Step 1: Permission -->
+  <section class="card">
+    <h2><span class="step">1</span>授權麥克風與掃描裝置</h2>
+    <p class="hint">瀏覽器規範：須先取得麥克風授權，才能列出耳機與麥克風的真實名稱。</p>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+      <button class="btn-primary" id="btnPermission">🔓 授權並掃描裝置</button>
+      <button class="btn-secondary" id="btnRefresh">🔄 重新掃描</button>
+      <span id="deviceCount" style="font-size: 13px; color: var(--text-light);"></span>
+    </div>
+  </section>
+
+  <!-- Step 2: Audio Sources -->
+  <section class="card">
+    <h2><span class="step">2</span>選擇音訊來源</h2>
+    <p class="hint">麥克風用於對講（耳機之間互聽）；音樂檔可同時播放給兩支耳機。</p>
+    <div class="grid-3">
+
+      <div class="inner-card">
+        <h3>🎤 麥克風 1 <span class="badge">A</span></h3>
+        <label>輸入裝置</label>
+        <select id="mic1Select"><option value="">— 不使用 —</option></select>
+        <div class="meter"><div class="meter-bar" id="meter1"></div></div>
+        <button class="btn-toggle" id="mic1Toggle" data-muted="false">🎙️ 開啟</button>
+      </div>
+
+      <div class="inner-card">
+        <h3>🎤 麥克風 2 <span class="badge b">B</span></h3>
+        <label>輸入裝置</label>
+        <select id="mic2Select"><option value="">— 不使用 —</option></select>
+        <div class="meter"><div class="meter-bar" id="meter2"></div></div>
+        <button class="btn-toggle" id="mic2Toggle" data-muted="false">🎙️ 開啟</button>
+      </div>
+
+      <div class="inner-card">
+        <h3>🎵 音樂檔</h3>
+        <label>本機音訊檔（mp3/wav/m4a）</label>
+        <input type="file" id="fileInput" accept="audio/*">
+        <audio id="filePlayer" controls></audio>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Step 3: Headphones -->
+  <section class="card">
+    <h2><span class="step">3</span>選擇兩支共享耳機</h2>
+    <p class="hint">每支耳機獨立音量與獨立靜音；音量為軟體增益，可超過 100%。</p>
+    <div class="grid-2">
+
+      <div class="inner-card">
+        <h3>🎧 耳機 A <span class="badge">Output A</span></h3>
+        <label>輸出裝置</label>
+        <select id="outASelect"><option value="">— 請選擇 —</option></select>
+        <div class="vol-row">
+          <span class="icon">🔉</span>
+          <input type="range" id="volA" min="0" max="150" value="100">
+          <span class="vol-label" id="volALabel">100%</span>
+        </div>
+        <button class="btn-toggle" id="muteA" data-muted="false">🔊 已開啟</button>
+      </div>
+
+      <div class="inner-card">
+        <h3>🎧 耳機 B <span class="badge b">Output B</span></h3>
+        <label>輸出裝置</label>
+        <select id="outBSelect"><option value="">— 請選擇 —</option></select>
+        <div class="vol-row">
+          <span class="icon">🔉</span>
+          <input type="range" id="volB" min="0" max="150" value="100">
+          <span class="vol-label" id="volBLabel">100%</span>
+        </div>
+        <button class="btn-toggle" id="muteB" data-muted="false">🔊 已開啟</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Master Controls -->
+  <section class="card">
+    <h2><span class="step">4</span>啟動與控制</h2>
+    <div class="master-controls">
+      <button class="btn-primary btn-large" id="btnStart">▶️ 開始共享</button>
+      <button class="btn-danger btn-large" id="btnStop" disabled>⏹️ 停止共享</button>
+      <button class="btn-secondary btn-large" id="btnMasterMute">🔇 全部靜音</button>
+      <button class="btn-record btn-large" id="btnRecord" disabled>🔴 開始錄音</button>
+    </div>
+    <div class="chip-row" style="justify-content: center; margin-top: 16px;">
+      <span class="chip">⌨️ 快捷鍵：M=總靜音 · R=錄音 · Space=開始/停止</span>
+    </div>
+  </section>
+
+  <!-- Recordings -->
+  <section class="card">
+    <h2>📁 錄音檔案</h2>
+    <p class="hint">錄音格式：WebM (Opus)；錄製內容包含所有來源混音，與每支耳機聽到的音量無關。</p>
+    <div id="recordingsContainer">
+      <div class="empty-list" id="emptyRecordings">尚無錄音檔，按「🔴 開始錄音」即可開始</div>
+      <ul class="rec-list" id="recordingList" style="display:none;"></ul>
+    </div>
+  </section>
+
+  <footer>
+    BlueShare Web · 純前端 · 不上傳任何音訊資料 · 全部處理於本機<br>
+    搭配 macOS 原生版（<code>blueshare.py</code>）使用效果更佳
+  </footer>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ===== State =====
+  const state = {
+    ctx: null,
+    masterGain: null,
+    micStreams: { mic1: null, mic2: null },
+    micSources: { mic1: null, mic2: null },
+    micGains: { mic1: null, mic2: null },
+    micMuted: { mic1: false, mic2: false },
+    micMeterRAF: { mic1: null, mic2: null },
+    fileSource: null,
+    fileGain: null,
+    outputs: {
+      A: { deviceId: '', gain: null, dest: null, audioEl: null, muted: false },
+      B: { deviceId: '', gain: null, dest: null, audioEl: null, muted: false }
+    },
+    recDest: null,
+    recorder: null,
+    recordedChunks: [],
+    isSharing: false,
+    isRecording: false,
+    masterMuted: false,
+    recordStartTime: 0,
+    recordingCount: 0,
+  };
+
+  // ===== Helpers =====
+  const $ = (id) => document.getElementById(id);
+
+  function toast(msg, type = '') {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast show ' + type;
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => { t.className = 'toast'; }, 2400);
+  }
+
+  function setStatus(text, mode = '') {
+    $('statusText').textContent = text;
+    $('statusPill').className = 'status-pill ' + mode;
+  }
+
+  function fillSelect(sel, devices, placeholder) {
+    const current = sel.value;
+    sel.innerHTML = `<option value="">${placeholder}</option>`;
+    devices.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      const label = d.label || `(裝置 ${i + 1} · ${d.deviceId.slice(0, 6)})`;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
+    if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
+  }
+
+  async function refreshDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter(d => d.kind === 'audioinput');
+      const outputs = devices.filter(d => d.kind === 'audiooutput');
+
+      fillSelect($('mic1Select'), inputs, '— 不使用 —');
+      fillSelect($('mic2Select'), inputs, '— 不使用 —');
+      fillSelect($('outASelect'), outputs, '— 請選擇 —');
+      fillSelect($('outBSelect'), outputs, '— 請選擇 —');
+
+      $('deviceCount').textContent = `掃描到 ${inputs.length} 支麥克風、${outputs.length} 個輸出裝置`;
+
+      const hasLabels = inputs.some(d => d.label) || outputs.some(d => d.label);
+      if (!hasLabels) {
+        $('deviceCount').textContent += '（裝置名稱未顯示？請先按「授權並掃描裝置」）';
+      }
+    } catch (e) {
+      toast('掃描裝置失敗：' + e.message);
+    }
+  }
+
+  // ===== Permission =====
+  $('btnPermission').addEventListener('click', async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      await refreshDevices();
+      toast('✅ 授權成功，已掃描裝置', 'success');
+    } catch (e) {
+      toast('❌ 授權失敗：' + e.message);
+    }
+  });
+  $('btnRefresh').addEventListener('click', refreshDevices);
+
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+
+  // ===== File input =====
+  $('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const player = $('filePlayer');
+    if (player.src) URL.revokeObjectURL(player.src);
+    player.src = URL.createObjectURL(file);
+    player.load();
+    if (state.isSharing) {
+      toast('⚠️ 已切換音樂檔，建議重新開始共享以套用');
+    }
+  });
+
+  // ===== Volume sliders =====
+  ['A', 'B'].forEach(key => {
+    const slider = $('vol' + key);
+    const label = $('vol' + key + 'Label');
+    slider.addEventListener('input', () => {
+      label.textContent = slider.value + '%';
+      applyOutputVolume(key);
+    });
+  });
+
+  function applyOutputVolume(key) {
+    const out = state.outputs[key];
+    if (!out.gain) return;
+    if (out.muted) {
+      out.gain.gain.value = 0;
+    } else {
+      out.gain.gain.value = parseFloat($('vol' + key).value) / 100;
+    }
+  }
+
+  // ===== Output mute toggles =====
+  ['A', 'B'].forEach(key => {
+    $('mute' + key).addEventListener('click', () => {
+      const out = state.outputs[key];
+      out.muted = !out.muted;
+      const btn = $('mute' + key);
+      btn.dataset.muted = String(out.muted);
+      btn.textContent = out.muted ? '🔇 已靜音' : '🔊 已開啟';
+      btn.classList.toggle('muted', out.muted);
+      applyOutputVolume(key);
+    });
+  });
+
+  // ===== Mic toggles =====
+  ['mic1', 'mic2'].forEach(key => {
+    $(key + 'Toggle').addEventListener('click', () => {
+      state.micMuted[key] = !state.micMuted[key];
+      const btn = $(key + 'Toggle');
+      btn.dataset.muted = String(state.micMuted[key]);
+      btn.textContent = state.micMuted[key] ? '🔇 已關閉' : '🎙️ 開啟';
+      btn.classList.toggle('muted', state.micMuted[key]);
+      if (state.micGains[key]) {
+        state.micGains[key].gain.value = state.micMuted[key] ? 0 : 1;
+      }
+    });
+  });
+
+  // ===== Master mute =====
+  $('btnMasterMute').addEventListener('click', () => {
+    state.masterMuted = !state.masterMuted;
+    if (state.masterGain) {
+      state.masterGain.gain.value = state.masterMuted ? 0 : 1;
+    }
+    const btn = $('btnMasterMute');
+    btn.textContent = state.masterMuted ? '🔊 取消全部靜音' : '🔇 全部靜音';
+    btn.classList.toggle('muted', state.masterMuted);
+    toast(state.masterMuted ? '已全部靜音' : '已恢復音量');
+  });
+
+  // ===== Start sharing =====
+  $('btnStart').addEventListener('click', async () => {
+    const outAId = $('outASelect').value;
+    const outBId = $('outBSelect').value;
+    if (!outAId || !outBId) {
+      toast('⚠️ 請先選擇兩支耳機（A 與 B）');
+      return;
+    }
+    if (outAId === outBId) {
+      toast('⚠️ 兩支耳機不可選相同裝置');
+      return;
+    }
+
+    $('btnStart').disabled = true;
+    try {
+      await teardown();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      // Context is created once and reused across sessions because
+      // createMediaElementSource() can only be called once per <audio> element.
+      if (!state.ctx || state.ctx.state === 'closed') {
+        state.ctx = new Ctx();
+      }
+      if (state.ctx.state === 'suspended') await state.ctx.resume();
+
+      state.masterGain = state.ctx.createGain();
+      state.masterGain.gain.value = state.masterMuted ? 0 : 1;
+
+      // --- Mic inputs ---
+      for (const key of ['mic1', 'mic2']) {
+        const deviceId = $(key + 'Select').value;
+        if (!deviceId) continue;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              deviceId: { exact: deviceId },
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: false
+            }
+          });
+          state.micStreams[key] = stream;
+          const src = state.ctx.createMediaStreamSource(stream);
+          const gain = state.ctx.createGain();
+          gain.gain.value = state.micMuted[key] ? 0 : 1;
+          src.connect(gain);
+          gain.connect(state.masterGain);
+          state.micSources[key] = src;
+          state.micGains[key] = gain;
+          startMeter(key, src);
+        } catch (e) {
+          toast(`⚠️ 麥克風 ${key === 'mic1' ? '1' : '2'} 無法啟用：${e.message}`);
+        }
+      }
+
+      // --- File source (MediaElementSource is one-shot per element; cache it) ---
+      const player = $('filePlayer');
+      if (player.src) {
+        if (!state.fileSource) {
+          try {
+            state.fileSource = state.ctx.createMediaElementSource(player);
+          } catch (e) {
+            console.warn('File source link error:', e);
+          }
+        }
+        if (state.fileSource) {
+          // Disconnect from any prior route (e.g. ctx.destination during preview)
+          try { state.fileSource.disconnect(); } catch (_) {}
+          state.fileGain = state.ctx.createGain();
+          state.fileGain.gain.value = 1;
+          state.fileSource.connect(state.fileGain);
+          state.fileGain.connect(state.masterGain);
+        }
+      }
+
+      // --- Per-device outputs ---
+      for (const key of ['A', 'B']) {
+        const deviceId = $('out' + key + 'Select').value;
+        const out = state.outputs[key];
+        out.deviceId = deviceId;
+        out.gain = state.ctx.createGain();
+        out.dest = state.ctx.createMediaStreamDestination();
+        state.masterGain.connect(out.gain);
+        out.gain.connect(out.dest);
+
+        const audioEl = new Audio();
+        audioEl.srcObject = out.dest.stream;
+        audioEl.autoplay = true;
+
+        if (typeof audioEl.setSinkId === 'function') {
+          try {
+            await audioEl.setSinkId(deviceId);
+          } catch (e) {
+            toast(`⚠️ 耳機 ${key} 切換失敗：${e.message}`);
+          }
+        }
+        try { await audioEl.play(); } catch (e) { /* may need user gesture; click already triggered */ }
+        out.audioEl = audioEl;
+        applyOutputVolume(key);
+      }
+
+      // --- Recording destination (always built so user can record any time) ---
+      state.recDest = state.ctx.createMediaStreamDestination();
+      state.masterGain.connect(state.recDest);
+
+      state.isSharing = true;
+      setStatus('🎙️ 共享中', 'active');
+      $('btnStart').disabled = true;
+      $('btnStop').disabled = false;
+      $('btnRecord').disabled = false;
+      toast('✅ 共享已啟動');
+    } catch (e) {
+      console.error(e);
+      toast('❌ 啟動失敗：' + e.message);
+      $('btnStart').disabled = false;
+      await teardown();
+    }
+  });
+
+  // ===== Stop sharing =====
+  $('btnStop').addEventListener('click', async () => {
+    if (state.isRecording) stopRecording();
+    await teardown();
+    setStatus('已停止');
+    toast('⏹️ 已停止共享');
+  });
+
+  async function teardown() {
+    if (state.isRecording) stopRecording();
+
+    for (const key of ['mic1', 'mic2']) {
+      if (state.micMeterRAF[key]) {
+        cancelAnimationFrame(state.micMeterRAF[key]);
+        state.micMeterRAF[key] = null;
+      }
+      if (state.micStreams[key]) {
+        state.micStreams[key].getTracks().forEach(t => t.stop());
+        state.micStreams[key] = null;
+      }
+      state.micSources[key] = null;
+      state.micGains[key] = null;
+      const m = $(key === 'mic1' ? 'meter1' : 'meter2');
+      if (m) m.style.width = '0%';
+    }
+
+    for (const key of ['A', 'B']) {
+      const out = state.outputs[key];
+      if (out.audioEl) {
+        out.audioEl.pause();
+        out.audioEl.srcObject = null;
+      }
+      state.outputs[key] = { deviceId: '', gain: null, dest: null, audioEl: null, muted: out.muted };
+    }
+
+    // Disconnect file graph but keep fileSource cached (one-shot lifecycle).
+    // Re-route fileSource to ctx.destination so users can still preview the file
+    // through their default device while not sharing.
+    if (state.fileGain) {
+      try { state.fileGain.disconnect(); } catch (_) {}
+    }
+    if (state.fileSource && state.ctx && state.ctx.state !== 'closed') {
+      try { state.fileSource.disconnect(); } catch (_) {}
+      try { state.fileSource.connect(state.ctx.destination); } catch (_) {}
+    }
+    state.fileGain = null;
+
+    state.recDest = null;
+    if (state.masterGain) {
+      try { state.masterGain.disconnect(); } catch (_) {}
+    }
+    state.masterGain = null;
+
+    // Keep AudioContext alive across sessions so cached fileSource stays valid.
+
+    state.isSharing = false;
+    $('btnStart').disabled = false;
+    $('btnStop').disabled = true;
+    $('btnRecord').disabled = true;
+  }
+
+  // ===== Recording =====
+  $('btnRecord').addEventListener('click', () => {
+    if (!state.isSharing) {
+      toast('請先開始共享');
+      return;
+    }
+    if (!state.isRecording) startRecording();
+    else stopRecording();
+  });
+
+  function pickMime() {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+    for (const m of candidates) {
+      if (MediaRecorder.isTypeSupported?.(m)) return m;
+    }
+    return '';
+  }
+
+  function startRecording() {
+    if (!state.recDest) return;
+    state.recordedChunks = [];
+    const mimeType = pickMime();
+    try {
+      state.recorder = new MediaRecorder(state.recDest.stream, mimeType ? { mimeType } : undefined);
+    } catch (e) {
+      toast('❌ 此瀏覽器不支援錄音：' + e.message);
+      return;
+    }
+    state.recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) state.recordedChunks.push(e.data);
+    };
+    state.recorder.onstop = () => {
+      const mt = state.recorder.mimeType || 'audio/webm';
+      const ext = mt.includes('mp4') ? 'm4a' : mt.includes('ogg') ? 'ogg' : 'webm';
+      const blob = new Blob(state.recordedChunks, { type: mt });
+      const ts = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const name = `BlueShare_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.${ext}`;
+      const duration = ((performance.now() - state.recordStartTime) / 1000).toFixed(1);
+      addRecording(name, blob, duration);
+    };
+    state.recorder.start(1000);
+    state.recordStartTime = performance.now();
+    state.isRecording = true;
+    const btn = $('btnRecord');
+    btn.textContent = '⏹️ 停止錄音';
+    btn.classList.add('active');
+    setStatus('🔴 錄音中', 'recording');
+    toast('🔴 開始錄音');
+  }
+
+  function stopRecording() {
+    if (state.recorder && state.recorder.state !== 'inactive') {
+      state.recorder.stop();
+    }
+    state.isRecording = false;
+    const btn = $('btnRecord');
+    btn.textContent = '🔴 開始錄音';
+    btn.classList.remove('active');
+    if (state.isSharing) setStatus('🎙️ 共享中', 'active');
+    toast('⏹️ 錄音已停止');
+  }
+
+  function addRecording(name, blob, duration) {
+    const url = URL.createObjectURL(blob);
+    const size = (blob.size / 1024).toFixed(1);
+
+    const ul = $('recordingList');
+    ul.style.display = '';
+    $('emptyRecordings').style.display = 'none';
+
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="rec-info">
+        <span class="rec-name">${name}</span>
+        <span style="margin-left:8px; color: var(--text-muted);">· ${duration}s · ${size} KB</span>
+      </div>
+      <audio controls src="${url}"></audio>
+      <a class="btn-secondary btn-small" href="${url}" download="${name}">⬇️ 下載</a>
+      <button class="btn-secondary btn-small" data-action="del">🗑️</button>
+    `;
+    li.querySelector('[data-action="del"]').addEventListener('click', () => {
+      URL.revokeObjectURL(url);
+      li.remove();
+      if (!ul.children.length) {
+        ul.style.display = 'none';
+        $('emptyRecordings').style.display = '';
+      }
+    });
+    ul.prepend(li);
+    state.recordingCount++;
+  }
+
+  // ===== Level meters =====
+  function startMeter(key, source) {
+    const analyser = state.ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const meterEl = $(key === 'mic1' ? 'meter1' : 'meter2');
+
+    const tick = () => {
+      if (!state.ctx || state.ctx.state === 'closed') return;
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const avg = sum / data.length;
+      const muted = state.micMuted[key];
+      const pct = muted ? 0 : Math.min(100, (avg / 80) * 100);
+      meterEl.style.width = pct + '%';
+      state.micMeterRAF[key] = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // ===== Keyboard shortcuts =====
+  window.addEventListener('keydown', (e) => {
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === 'm' || e.key === 'M') {
+      $('btnMasterMute').click();
+      e.preventDefault();
+    } else if (e.key === 'r' || e.key === 'R') {
+      if (!$('btnRecord').disabled) {
+        $('btnRecord').click();
+        e.preventDefault();
+      }
+    } else if (e.key === ' ') {
+      if (state.isSharing) $('btnStop').click();
+      else $('btnStart').click();
+      e.preventDefault();
+    }
+  });
+
+  // ===== Compatibility check =====
+  (function checkCompat() {
+    const banner = $('compatBanner');
+    const issues = [];
+    if (!navigator.mediaDevices?.getUserMedia) issues.push('不支援麥克風');
+    const hasSetSinkId = 'setSinkId' in HTMLMediaElement.prototype;
+    if (!hasSetSinkId) issues.push('不支援指定耳機輸出（setSinkId）');
+    if (typeof MediaRecorder === 'undefined') issues.push('不支援錄音 API');
+
+    if (issues.length) {
+      banner.innerHTML = '⚠️ <strong>瀏覽器相容性提示：</strong>' + issues.join('、') + '。建議使用最新版 Chrome / Edge / Opera。';
+      banner.classList.add('warning');
+    }
+  })();
+
+  // ===== Initial scan (labels may be hidden until permission) =====
+  refreshDevices();
+  setStatus('未啟動');
+
+})();
+</script>
+</body>
+</html>
