@@ -3,10 +3,7 @@ cd "$(dirname "$0")"
 echo "🚀 正在啟動 BlueShare 音訊共享工具..."
 echo "-----------------------------------"
 
-# 檢查並安裝套件
-python3 -m pip install pyobjc-framework-CoreAudio pyobjc-framework-Cocoa --quiet
-
-# 執行程式
+# 執行程式（本工具透過動態編譯 Swift 呼叫 Core Audio，無需安裝 pyobjc）
 python3 blueshare.py
 
 echo "-----------------------------------"

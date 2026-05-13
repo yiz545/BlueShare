@@ -20,6 +20,25 @@ import Foundation
 import CoreAudio
 import AVFoundation
 
+// 找出內建麥克風的 AudioDeviceID。Bluetooth 耳機在 A2DP 模式下的 :input 裝置雖然存在但不會送資料，
+// 強迫用內建麥克風才能保證錄音與對講都收得到聲音。
+func findBuiltInMic() -> AudioDeviceID? {{
+    var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size)
+    var ids = [AudioDeviceID](repeating: 0, count: Int(size)/MemoryLayout<AudioDeviceID>.size)
+    AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
+    for id in ids {{
+        var uidAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var uid: CFString = "" as CFString
+        var us = UInt32(MemoryLayout<CFString>.size)
+        if AudioObjectGetPropertyData(id, &uidAddr, 0, nil, &us, &uid) == noErr {{
+            if (uid as String) == "BuiltInMicrophoneDevice" {{ return id }}
+        }}
+    }}
+    return nil
+}}
+
 func getDevices() {{
     var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
     var propsize: UInt32 = 0
@@ -65,11 +84,43 @@ func getDevices() {{
     }}
 }}
 
+var sharedAggregateID: AudioDeviceID = 0
+
+func destroyAggregatesByUID(_ targetUID: String) {{
+    var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size)
+    var ids = [AudioDeviceID](repeating: 0, count: Int(size)/MemoryLayout<AudioDeviceID>.size)
+    AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
+    for id in ids {{
+        var uidAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var devUID: CFString = "" as CFString
+        var us = UInt32(MemoryLayout<CFString>.size)
+        if AudioObjectGetPropertyData(id, &uidAddr, 0, nil, &us, &devUID) == noErr {{
+            if (devUID as String) == targetUID {{
+                AudioHardwareDestroyAggregateDevice(id)
+            }}
+        }}
+    }}
+}}
+
 class UltimateEngine {{
     var audioEngine: AVAudioEngine?
     var recorder: AVAudioFile?
     var isMuted = false
-    
+
+    func cleanup() {{
+        if let engine = audioEngine, engine.isRunning {{
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }}
+        recorder = nil
+        if sharedAggregateID != 0 {{
+            AudioHardwareDestroyAggregateDevice(sharedAggregateID)
+            sharedAggregateID = 0
+        }}
+    }}
+
     func toggleMic() {{
         isMuted.toggle()
         audioEngine?.inputNode.volume = isMuted ? 0.0 : 1.0
@@ -158,6 +209,18 @@ class UltimateEngine {{
     }}
     
     func start(uids: [String], recordPath: String) {{
+        // 啟動前先清掉任何同 UID 的殘留 aggregate（避免拿到上次的舊裝置）
+        destroyAggregatesByUID("com.blueshare.ultimate")
+
+        // 強制把預設輸入切到內建麥克風 —
+        // 如果之前用過此工具或調過設定，預設輸入可能停在 Bluetooth :input 裝置，
+        // 而 A2DP 模式下藍牙麥克風不會送出資料，會造成錄音和對講都收不到聲音。
+        if let micID = findBuiltInMic() {{
+            var inAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var id = micID
+            AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &inAddr, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &id)
+        }}
+
         let subDevices = uids.map {{ [kAudioSubDeviceUIDKey: $0 as CFString, kAudioSubDeviceDriftCompensationKey: 1] }}
         let desc: [String: Any] = [
             kAudioAggregateDeviceNameKey: "BlueShare_Ultimate",
@@ -166,36 +229,72 @@ class UltimateEngine {{
             kAudioAggregateDeviceIsStackedKey: 1,
             kAudioAggregateDeviceMasterSubDeviceKey: uids[0] as CFString
         ]
-        
+
         var newID: AudioDeviceID = 0
-        AudioHardwareCreateAggregateDevice(desc as CFDictionary, &newID)
-        
+        let createStatus = AudioHardwareCreateAggregateDevice(desc as CFDictionary, &newID)
+        if createStatus != noErr || newID == 0 {{
+            print("ERROR:CreateAggregate failed status=\\(createStatus)")
+            fflush(stdout)
+            return
+        }}
+        sharedAggregateID = newID
+
         var outAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var inAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var devID = newID
         AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &outAddr, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &devID)
-        AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &inAddr, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &devID)
-        
+
+        // 只有當 aggregate 真的有 input streams 時才把它設為預設輸入；否則保留系統原本的 mic
+        var inStreamsAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var inStreamsSize: UInt32 = 0
+        AudioObjectGetPropertyDataSize(newID, &inStreamsAddr, 0, nil, &inStreamsSize)
+        if inStreamsSize > 0 {{
+            var inAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &inAddr, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &devID)
+        }}
+
         Thread.sleep(forTimeInterval: 0.5)
-        
+
         audioEngine = AVAudioEngine()
         guard let engine = audioEngine else {{ return }}
-        
-        let mixer = engine.mainMixerNode
+
         let input = engine.inputNode
-        
-        engine.connect(input, to: mixer, format: input.inputFormat(forBus: 0))
-        
+        // 不把 input 連到 mixer/output（不開對講迴路）—
+        // 因為 macOS 把 aggregate 當預設輸出時，engine 的 output 鏈不一定能 pull，
+        // 把 input 接進這條鏈會讓 inputNode 也卡住、tap 永遠不觸發。
+        // 改成只在 inputNode 上 tap，獨立 pull，錄音可靠。
+        // 副作用：無法把麥克風即時聲音送回兩支耳機（對講迴路無法在現有架構下與錄音同時運作）。
+
+        let inFmt = input.inputFormat(forBus: 0)
+
         let url = URL(fileURLWithPath: recordPath)
         do {{
-            let format = mixer.outputFormat(forBus: 0)
-            recorder = try AVAudioFile(forWriting: url, settings: format.settings)
-            
-            mixer.installTap(onBus: 0, bufferSize: 1024, format: format) {{ (buffer, _) in
+            // 在 inputNode 上 tap — 這是 AVAudioEngine 錄麥克風最可靠的點，
+            // mixer/outputNode 的 tap 在某些 macOS 設定下會被優化掉而從不觸發
+            let recFormat = inFmt
+            let fileSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: recFormat.sampleRate,
+                AVNumberOfChannelsKey: recFormat.channelCount,
+                AVLinearPCMBitDepthKey: 32,
+                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMIsBigEndianKey: false,
+                "AVLinearPCMIsNonInterleaved": false  // 在 script 模式下 AVLinearPCMIsNonInterleavedKey 不可見，用字面值
+            ]
+            recorder = try AVAudioFile(forWriting: url, settings: fileSettings, commonFormat: .pcmFormatFloat32, interleaved: true)
+
+            input.installTap(onBus: 0, bufferSize: 1024, format: recFormat) {{ (buffer, _) in
                 try? self.recorder?.write(from: buffer)
             }}
-            
+
             try engine.start()
+
+            // 再次強制把預設輸出設為 aggregate — engine.start() 過程中 macOS 的 Bluetooth manager
+            // 可能會把預設輸出切到單一耳機，這裡覆寫回 aggregate 才能真的同步播出。
+            Thread.sleep(forTimeInterval: 0.3)
+            var outAddr2 = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var aggID = sharedAggregateID
+            AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &outAddr2, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &aggID)
+
             print("SUCCESS")
             fflush(stdout)
         }} catch {{
@@ -211,24 +310,39 @@ if args.count > 1 && args[1] == "list" {{
 }} else if args.count > 3 && args[1] == "start" {{
     let uids = args[2].components(separatedBy: ",")
     let engine = UltimateEngine()
+
+    // 訊號處理：被 kill / Ctrl+C 時要銷毀 aggregate，否則會在系統留下殭屍裝置
+    signal(SIGINT) {{ _ in
+        if sharedAggregateID != 0 {{
+            AudioHardwareDestroyAggregateDevice(sharedAggregateID)
+        }}
+        exit(0)
+    }}
+    signal(SIGTERM) {{ _ in
+        if sharedAggregateID != 0 {{
+            AudioHardwareDestroyAggregateDevice(sharedAggregateID)
+        }}
+        exit(0)
+    }}
+
     engine.start(uids: uids, recordPath: args[3])
-    
-    // 背景執行緒負責接收 Python 傳來的按鍵指令
+
+    // 背景執行緒負責接收 Python 傳來的按鍵指令；stdin EOF 時做完整清理後結束
+    // 協定：m=主靜音, v,UID,up|down=指定耳機調音量, mic,UID=指定耳機麥克風切換
     DispatchQueue.global().async {{
         while let line = readLine() {{
             let parts = line.components(separatedBy: ",")
             if parts[0] == "m" {{
                 engine.toggleMic()
             }} else if parts[0] == "v" && parts.count == 3 {{
-                if let idx = Int(parts[1]), idx < uids.count {{
-                    engine.setVolume(uid: uids[idx], direction: parts[2])
-                }}
+                engine.setVolume(uid: parts[1], direction: parts[2])
             }} else if parts[0] == "mic" && parts.count == 2 {{
-                if let idx = Int(parts[1]), idx < uids.count {{
-                    engine.toggleDeviceMic(uid: uids[idx])
-                }}
+                engine.toggleDeviceMic(uid: parts[1])
             }}
         }}
+        // Python 關閉 stdin 時走這裡：把 aggregate 銷毀後正常結束
+        engine.cleanup()
+        exit(0)
     }}
     RunLoop.main.run()
 }}
@@ -257,25 +371,59 @@ if __name__ == "__main__":
     
     proc = run_swift(["list"])
     output, _ = proc.communicate()
-    devices = []
-    
+
+    # 把同一支實體耳機的 :input / :output 兩個邏輯裝置合併成一筆顯示
+    # 內部仍保留兩個 UID，建 aggregate 時兩個都加進去 → 同一裝置可同時播音樂與收音
+    groups = {}
+    order = []
     for line in output.split("\n"):
-        if "|" in line:
-            parts = line.split("|")
-            devices.append({"name": parts[1], "uid": parts[2]})
-            
+        if "|" not in line:
+            continue
+        parts = line.split("|")
+        if len(parts) < 3:
+            continue
+        raw_name, uid = parts[1], parts[2]
+        has_mic = "🎤" in raw_name
+        clean_name = raw_name.replace(" 🎤", "")
+        # 藍牙裝置 UID 形如 "XX-XX-...:input" / ":output"；非藍牙裝置直接用整個 UID 當 key
+        if uid.endswith(":input") or uid.endswith(":output"):
+            key = uid.rsplit(":", 1)[0]
+        else:
+            key = uid
+        if key not in groups:
+            groups[key] = {"name": clean_name, "uids": [], "has_mic": False}
+            order.append(key)
+        groups[key]["uids"].append(uid)
+        if has_mic:
+            groups[key]["has_mic"] = True
+
+    devices = [groups[k] for k in order]
     if not devices:
         print("❌ 找不到可用的耳機，請確認耳機已連線藍牙。")
         sys.exit(1)
-        
+
     print("📌 有標註 🎤 的代表該設備支援麥克風\n")
     for i, dev in enumerate(devices):
-        print(f"[{i}] {dev['name']}")
-        
-    choice = input("\n請選擇要共享的耳機編號 (例如 1,2): ")
+        mic_tag = " 🎤" if dev["has_mic"] else ""
+        print(f"[{i}] {dev['name']}{mic_tag}")
+
+    choice = input("\n請選擇要共享的耳機編號 (例如 0,1): ")
     try:
         indices = [int(x.strip()) for x in choice.split(",")]
-        selected_uids = [devices[i]["uid"] for i in indices]
+        # Aggregate 只放 :output UID — 加入 :input 會強迫藍牙切換到 HFP 通話模式，
+        # 不僅音質劣化，macOS 還會搶走預設輸出造成共享失敗。
+        # 個別耳機的 :input UID 仍保留下來，按 5/6 鍵時直接用 CoreAudio 操作其麥克風屬性。
+        selected_uids = []
+        headphone_keys = []  # 每個被選耳機的 {"output": uid, "input": uid_or_None}，對應 1-6 按鍵
+        for i in indices:
+            out_uid = next((u for u in devices[i]["uids"] if u.endswith(":output")), None)
+            in_uid = next((u for u in devices[i]["uids"] if u.endswith(":input")), None)
+            # 非藍牙裝置（如內建喇叭）整個 UID 就是 output
+            if out_uid is None and in_uid is None and devices[i]["uids"]:
+                out_uid = devices[i]["uids"][0]
+            if out_uid:
+                selected_uids.append(out_uid)
+            headphone_keys.append({"output": out_uid, "input": in_uid})
         
         filename = f"錄音_{datetime.now().strftime('%Y%m%d_%H%M%S')}.caf"
         record_path = os.path.join(DESKTOP_PATH, filename)
@@ -321,30 +469,34 @@ if __name__ == "__main__":
         t.daemon = True
         t.start()
         
+        def send_vol(headphone_idx, direction):
+            if headphone_idx < len(headphone_keys):
+                uid = headphone_keys[headphone_idx]["output"]
+                if uid:
+                    proc.stdin.write(f"v,{uid},{direction}\n")
+                    proc.stdin.flush()
+
+        def send_mic_toggle(headphone_idx):
+            if headphone_idx < len(headphone_keys):
+                uid = headphone_keys[headphone_idx]["input"]
+                if uid:
+                    proc.stdin.write(f"mic,{uid}\n")
+                    proc.stdin.flush()
+                else:
+                    print(f"\r⚠️ 此耳機沒有可用的麥克風輸入裝置      ", end="", flush=True)
+
         # 監聽鍵盤輸入
         while True:
             ch = getch()
             if ch.lower() == 'm':
                 proc.stdin.write("m\n")
                 proc.stdin.flush()
-            elif ch == '1':
-                proc.stdin.write("v,0,down\n")
-                proc.stdin.flush()
-            elif ch == '2':
-                proc.stdin.write("v,0,up\n")
-                proc.stdin.flush()
-            elif ch == '3':
-                proc.stdin.write("v,1,down\n")
-                proc.stdin.flush()
-            elif ch == '4':
-                proc.stdin.write("v,1,up\n")
-                proc.stdin.flush()
-            elif ch == '5':
-                proc.stdin.write("mic,0\n")
-                proc.stdin.flush()
-            elif ch == '6':
-                proc.stdin.write("mic,1\n")
-                proc.stdin.flush()
+            elif ch == '1': send_vol(0, "down")
+            elif ch == '2': send_vol(0, "up")
+            elif ch == '3': send_vol(1, "down")
+            elif ch == '4': send_vol(1, "up")
+            elif ch == '5': send_mic_toggle(0)
+            elif ch == '6': send_mic_toggle(1)
             elif ch.lower() == 'q' or ch == '\x03': # Q 鍵或是 Ctrl+C
                 break
                 
